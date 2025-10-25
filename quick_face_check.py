@@ -194,7 +194,13 @@ def run_on_image(path, backend="hog"):
 def run_on_camera(src=0, backend="hog"):
     # En Windows, CAP_DSHOW suele ser más estable
     try:
-        cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+        # Comprueba el sistema operativo
+        if sys.platform.system() == 'Windows':
+            # Usa CAP_DSHOW solo en Windows
+            cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+        else:
+            # Usa el backend predeterminado en macOS/Linux
+            cap = cv2.VideoCapture(src)
     except Exception:
         cap = cv2.VideoCapture(src)
 

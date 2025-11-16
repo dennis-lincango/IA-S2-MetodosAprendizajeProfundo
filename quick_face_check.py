@@ -1,3 +1,6 @@
+# python quick_face_check.py --camera
+# python quick_face_check.py --image "CV.jpg"
+
  # quick_face_check.py (v2 robusta)
 import argparse
 import sys

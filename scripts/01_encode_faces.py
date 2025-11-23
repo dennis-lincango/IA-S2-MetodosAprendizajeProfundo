@@ -4,20 +4,20 @@
 # import the necessary packages
 from imutils import paths
 import face_recognition
+
 import argparse
 import pickle
 import cv2
 import os
 
-# hog es mas rapido pero menos preciso, cnn al contrario de hog
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--dataset", required=True,
-	help="path to input directory of faces + images")
+                help="path to input directory of faces + images")
 ap.add_argument("-e", "--encodings", required=True,
-	help="path to serialized db of facial encodings")
-ap.add_argument("-d", "--detection-method", type=str, default="hog",
-	help="face detection model to use: either `hog` or `cnn`")
+                help="path to serialized db of facial encodings")
+ap.add_argument("-d", "--detection-method", type=str, default="cnn",
+                help="face detection model to use: either `hog` or `cnn`")
 args = vars(ap.parse_args())
 
 # grab the paths to the input images in our dataset
@@ -28,37 +28,53 @@ imagePaths = list(paths.list_images(args["dataset"]))
 knownEncodings = []
 knownNames = []
 
+# maximum width to resize images (to speed processing)
+MAX_WIDTH = 800
+
 # loop over the image paths
 for (i, imagePath) in enumerate(imagePaths):
-	# extract the person name from the image path
-	print("[INFO] processing image {}/{}".format(i + 1,
-		len(imagePaths)))
-	name = imagePath.split(os.path.sep)[-2]
+    try:
+        print("[INFO] processing image {}/{}".format(i + 1, len(imagePaths)))
 
-	# load the input image and convert it from RGB (OpenCV ordering)
-	# to dlib ordering (RGB)
-	image = cv2.imread(imagePath)
-	rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # extract the person name
+        name = imagePath.split(os.path.sep)[-2]
 
-	# detect the (x, y)-coordinates of the bounding boxes
-	# corresponding to each face in the input image
-	boxes = face_recognition.face_locations(rgb,
-		model=args["detection_method"])
+        # load image
+        image = cv2.imread(imagePath)
+        if image is None:
+            print(f"[WARN] No se pudo leer la imagen: {imagePath}. Saltando...")
+            continue
 
-	# compute the facial embedding for the face. Esto da el vector 128-d de la cara
-	encodings = face_recognition.face_encodings(rgb, boxes)
+        # resize if too large
+        if image.shape[1] > MAX_WIDTH:
+            scale = MAX_WIDTH / image.shape[1]
+            new_dim = (MAX_WIDTH, int(image.shape[0] * scale))
+            image = cv2.resize(image, new_dim)
+            print(f"[INFO] Imagen redimensionada por ser muy grande.")
 
-	# loop over the encodings
-	for encoding in encodings:
-		# add each encoding + name to our set of known names and
-		# encodings
-		knownEncodings.append(encoding)
-		knownNames.append(name)
+        # convert to RGB
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # detect face locations
+        boxes = face_recognition.face_locations(
+            rgb,
+            model=args["detection_method"]
+        )
+
+        # compute facial encodings
+        encodings = face_recognition.face_encodings(rgb, boxes)
+
+        # store encodings
+        for encoding in encodings:
+            knownEncodings.append(encoding)
+            knownNames.append(name)
+
+    except Exception as e:
+        print(f"[ERROR] Problema con la imagen {imagePath}: {e}. Saltando...")
+        continue
 
 # dump the facial encodings + names to disk
 print("[INFO] serializing encodings...")
 data = {"encodings": knownEncodings, "names": knownNames}
-f = open(args["encodings"], "wb")
-f.write(pickle.dumps(data))
-f.close()
-
+with open(args["encodings"], "wb") as f:
+    f.write(pickle.dumps(data))

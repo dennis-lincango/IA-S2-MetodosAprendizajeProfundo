@@ -7,7 +7,6 @@ import face_recognition
 import argparse
 import imutils
 import pickle
-import time
 import cv2
 
 # construct the argument parser and parse the arguments
@@ -24,8 +23,8 @@ ap.add_argument("-d", "--detection-method", type=str, default="hog",
                 help="face detection model to use: either `hog` or `cnn`")
 args = vars(ap.parse_args())
 
-# archivo de salida de punto medio
-# coordenadas = open("coordenadas.txt","w")
+# Parámetro de tolerancia (más bajo = más estricto)
+TOLERANCE = 0.45
 
 # load the known faces and embeddings
 print("[INFO] loading encodings...")
@@ -46,11 +45,14 @@ while True:
     if not grabbed:
         break
 
-    # convert the input frame from BGR to RGB then resize it to have
-    # a width of 750px (to speedup processing)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    rgb = imutils.resize(frame, width=750)
-    r = frame.shape[1] / float(rgb.shape[1])
+    # resize the frame to have a width of 750px (to speed up processing)
+    frame_resized = imutils.resize(frame, width=750)
+
+    # convert the resized frame from BGR to RGB
+    rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+
+    # ratio to scale back the face locations to original frame size
+    r = frame.shape[1] / float(frame_resized.shape[1])
 
     # detect the (x, y)-coordinates of the bounding boxes
     # corresponding to each face in the input frame, then compute
@@ -59,15 +61,18 @@ while True:
                                             model=args["detection_method"])
     encodings = face_recognition.face_encodings(rgb, boxes)
     names = []
-    # rostros = "Cantidad de rostros detectados en este frame: " + str(len(boxes)) + "\n"
-    # coordenadas.write(rostros)
 
     # loop over the facial embeddings
     for encoding in encodings:
         # attempt to match each face in the input image to our known
         # encodings
-        matches = face_recognition.compare_faces(data["encodings"],
-                                                 encoding)
+        matches = face_recognition.compare_faces(
+            data["encodings"],
+            encoding,
+            tolerance=TOLERANCE
+        )
+
+        # default name is Unknown
         name = "Unknown"
 
         # check to see if we have found a match
@@ -79,14 +84,13 @@ while True:
             counts = {}
 
             # loop over the matched indexes and maintain a count for
-            # each recognized face face
+            # each recognized face
             for i in matchedIdxs:
-                name = data["names"][i]
-                counts[name] = counts.get(name, 0) + 1
+                person_name = data["names"][i]
+                counts[person_name] = counts.get(person_name, 0) + 1
 
             # determine the recognized face with the largest number
-            # of votes (note: in the event of an unlikely tie Python
-            # will select first entry in the dictionary)
+            # of votes
             name = max(counts, key=counts.get)
 
         # update the list of names
@@ -94,7 +98,7 @@ while True:
 
     # loop over the recognized faces
     for ((top, right, bottom, left), name) in zip(boxes, names):
-        # rescale the face coordinates
+        # rescale the face coordinates back to original frame size
         top = int(top * r)
         right = int(right * r)
         bottom = int(bottom * r)
@@ -105,13 +109,10 @@ while True:
                       (0, 255, 0), 2)
 
         # Punto Medio
-        xMedio = int(left + (abs((left - right) / 2)))
-        yMedio = int(top + (abs((top - bottom) / 2)))
-        # print(xMedio,",",yMedio)
+        xMedio = int(left + abs((left - right) / 2))
+        yMedio = int(top + abs((top - bottom) / 2))
         cv2.line(frame, (xMedio - 1, yMedio), (xMedio + 1, yMedio), (0, 255, 0), 2)
         cv2.line(frame, (xMedio, yMedio - 1), (xMedio, yMedio + 1), (0, 255, 0), 2)
-        # ptoMedio = str(xMedio)+","+str(yMedio)+" \n"
-        # coordenadas.write(ptoMedio)
         # Fin Punto MEDIO
 
         y = top - 15 if top - 15 > 15 else top + 15
@@ -126,7 +127,7 @@ while True:
                                  (frame.shape[1], frame.shape[0]), True)
 
     # if the writer is not None, write the frame with recognized
-    # faces t odisk
+    # faces to disk
     if writer is not None:
         writer.write(frame)
 
@@ -142,8 +143,9 @@ while True:
 
 # close the video file pointers
 stream.release()
-# coordenadas.close()
 
 # check to see if the video writer point needs to be released
 if writer is not None:
     writer.release()
+
+cv2.destroyAllWindows()

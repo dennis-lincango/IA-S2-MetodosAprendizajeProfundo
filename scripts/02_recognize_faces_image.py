@@ -6,15 +6,16 @@ import face_recognition
 import argparse
 import pickle
 import cv2
+import numpy as np
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-e", "--encodings", required=True,
-	help="path to serialized db of facial encodings")
+    help="path to serialized db of facial encodings")
 ap.add_argument("-i", "--image", required=True,
-	help="path to input image")
+    help="path to input image")
 ap.add_argument("-d", "--detection-method", type=str, default="hog",
-	help="face detection model to use: either `hog` or `cnn`")
+    help="face detection model to use: either `hog` or `cnn`")
 args = vars(ap.parse_args())
 
 # load the known faces and embeddings
@@ -30,50 +31,52 @@ rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 # for each face
 print("[INFO] recognizing faces...")
 boxes = face_recognition.face_locations(rgb,
-	model=args["detection_method"])
+    model=args["detection_method"])
 encodings = face_recognition.face_encodings(rgb, boxes)
 
 # initialize the list of names for each face detected
 names = []
 
+# umbral de decisión para aceptar un match
+# más bajo = más estricto (más Unknown), más alto = más permisivo
+THRESHOLD = 0.48
+
 # loop over the facial embeddings
 for encoding in encodings:
-	# attempt to match each face in the input image to our known
-	# encodings
-	matches = face_recognition.compare_faces(data["encodings"],
-		encoding)
-	name = "Unknown"
+    # calcular distancias entre esta cara y todas las caras conocidas
+    face_distances = face_recognition.face_distance(data["encodings"], encoding)
 
-	# check to see if we have found a match
-	if True in matches:
-		# find the indexes of all matched faces then initialize a
-		# dictionary to count the total number of times each face
-		# was matched
-		matchedIdxs = [i for (i, b) in enumerate(matches) if b]
-		counts = {}
+    # por defecto es desconocido
+    name = "unknown"
 
-		# loop over the matched indexes and maintain a count for
-		# each recognized face face
-		for i in matchedIdxs:
-			name = data["names"][i]
-			counts[name] = counts.get(name, 0) + 1
+    if len(face_distances) > 0:
+        # índice del mejor match (menor distancia)
+        best_match_index = np.argmin(face_distances)
+        best_distance = face_distances[best_match_index]
 
-		# determine the recognized face with the largest number of
-		# votes (note: in the event of an unlikely tie Python will
-		# select first entry in the dictionary)
-		name = max(counts, key=counts.get)
-	
-	# update the list of names
-	names.append(name)
+        # si la mejor distancia es menor al umbral, aceptamos el match
+        if best_distance < THRESHOLD:
+            name = data["names"][best_match_index]
+
+    # actualizar la lista de nombres
+    names.append(name)
 
 # loop over the recognized faces
 for ((top, right, bottom, left), name) in zip(boxes, names):
-	# draw the predicted face name on the image
-	cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
-	y = top - 15 if top - 15 > 15 else top + 15
-	cv2.putText(image, name, (left, y), cv2.FONT_HERSHEY_SIMPLEX,
-		0.75, (0, 255, 0), 2)
+    # draw the predicted face name on the image
+    cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
+    y = top - 15 if top - 15 > 15 else top + 15
+    cv2.putText(image, name, (left, y), cv2.FONT_HERSHEY_SIMPLEX,
+        0.75, (0, 255, 0), 2)
+
+def resize_with_aspect_ratio(image, max_width=1000, max_height=800):
+    h, w = image.shape[:2]
+    scale = min(max_width / w, max_height / h)
+    if scale < 1:  # solo reducir, nunca aumentar
+        image = cv2.resize(image, (int(w * scale), int(h * scale)))
+    return image
 
 # show the output image
+image = resize_with_aspect_ratio(image)
 cv2.imshow("Image", image)
 cv2.waitKey(0)
